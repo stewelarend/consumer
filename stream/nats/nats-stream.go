@@ -59,7 +59,7 @@ func (s stream) Run() error {
 	log.Debugf("Connected to NATS(%s)", nc.ConnectedUrl())
 
 	nc.Subscribe(s.config.Topic, func(m *nats.Msg) {
-		log.Debugf("Got task request on:", m.Subject)
+		log.Debugf("Got task request on: %s", m.Subject)
 		if m.Reply != "" {
 			log.Debugf("Sending reply to \"%s\"", m.Reply)
 			nc.Publish(m.Reply, []byte("Done!"))
