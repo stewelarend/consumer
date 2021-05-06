@@ -70,20 +70,22 @@ func (s stream) Run() error {
 	//create the message channel and start the workers
 	msgChan := make(chan *nats.Msg, s.config.NrWorkers)
 	wg := sync.WaitGroup{}
-	for {
-		log.Debugf("loop")
-		select {
-		case msg := <-msgChan:
-			log.Debugf("Got message(sub:%s,reply:%s,hdr:%+v),data(%s)", msg.Subject, msg.Reply, msg.Header, string(msg.Data))
-			wg.Add(1)
-			go func(msg *nats.Msg) {
-				s.handle(msg)
-				wg.Done()
-			}(msg)
-		case <-time.After(time.Second):
-			log.Debugf("no messages yet...")
-		}
-	} //for main loop
+	go func() {
+		for {
+			log.Debugf("loop")
+			select {
+			case msg := <-msgChan:
+				log.Debugf("Got message(sub:%s,reply:%s,hdr:%+v),data(%s)", msg.Subject, msg.Reply, msg.Header, string(msg.Data))
+				wg.Add(1)
+				go func(msg *nats.Msg) {
+					s.handle(msg)
+					wg.Done()
+				}(msg)
+			case <-time.After(time.Second):
+				log.Debugf("no messages yet...")
+			}
+		} //for main loop
+	}()
 
 	defer func() {
 		close(msgChan)
@@ -110,7 +112,7 @@ func (s stream) Run() error {
 	log.Debugf("stopping")
 
 	if err := subscription.Unsubscribe(); err != nil {
-		fmt.Errorf("failed to unsubscribe: %v", err)
+		return fmt.Errorf("failed to unsubscribe: %v", err)
 	}
 	log.Debugf("Unsubscribed")
 	return nil
