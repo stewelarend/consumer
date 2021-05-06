@@ -1,13 +1,16 @@
 package nats
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	nats "github.com/nats-io/nats.go"
 	"github.com/stewelarend/consumer"
+	"github.com/stewelarend/consumer/message"
 	"github.com/stewelarend/logger"
+	"github.com/stewelarend/util"
 )
 
 var log = logger.New("nats-stream")
@@ -39,7 +42,7 @@ func (c *config) Validate() error {
 }
 
 func (c config) Create(consumer consumer.IConsumer) (consumer.IStream, error) {
-	return stream{
+	return &stream{
 		config:   c,
 		consumer: consumer,
 	}, nil
@@ -51,11 +54,10 @@ type stream struct {
 	nc       *nats.Conn
 }
 
-func (s stream) Run() error {
+func (s *stream) Run() error {
 	var err error
-	var nc *nats.Conn
 	for i := 0; i < 5; i++ {
-		nc, err = nats.Connect(s.config.URI)
+		s.nc, err = nats.Connect(s.config.URI)
 		if err == nil {
 			break
 		}
@@ -65,7 +67,11 @@ func (s stream) Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to NATS(%s): %v", s.config.URI, err)
 	}
-	log.Debugf("Connected to NATS(%s)", nc.ConnectedUrl())
+	log.Debugf("Connected to NATS(%s)", s.nc.ConnectedUrl())
+	defer func() {
+		s.nc.Close()
+		s.nc = nil
+	}()
 
 	//create the message channel and start the workers
 	msgChan := make(chan *nats.Msg, s.config.NrWorkers)
@@ -95,7 +101,7 @@ func (s stream) Run() error {
 	}()
 
 	//subscribe to write into the message channel
-	subscription, err := nc.QueueSubscribeSyncWithChan(
+	subscription, err := s.nc.QueueSubscribeSyncWithChan(
 		s.config.Topic,
 		s.config.Topic, //Group,
 		msgChan)
@@ -120,11 +126,68 @@ func (s stream) Run() error {
 
 func (s stream) handle(msg *nats.Msg) {
 	log.Debugf("Got task request on: %s", msg.Subject)
+
 	if msg.Reply != "" {
-		log.Debugf("Sending reply to \"%s\"", msg.Reply)
-		s.nc.Publish(msg.Reply, []byte("Done!"))
-	} else {
-		log.Debugf("NOT Sending reply")
+		//consumer from NATS should not be expected to send a reply
+		//only RPC sends replies, so it is an error when reply is requested in the event
+		//which indicates the process sending this event sent a request instead of an event
+		//we respond with an error for such events
+		log.Errorf("Sender requested a reply in NATS which is wrong for consumer topics.")
+		response := message.Response{
+			Message: message.Message{
+				Timestamp: time.Now(),
+			},
+			Result: []message.Result{},
+			Data:   nil,
+		}
+		jsonResponse, _ := json.Marshal(response)
+		if err := s.nc.Publish(msg.Reply, jsonResponse); err != nil {
+			log.Errorf("failed to send error response to reply: %v", err)
+		}
+		return
 	}
-	time.Sleep(time.Second)
+
+	//todo: on error, push event to error queue...
+	var event message.Event
+	if err := json.Unmarshal(msg.Data, &event); err != nil {
+		log.Errorf("failed to decode JSON event: %v", err)
+		return
+	}
+	if err := event.Validate(); err != nil {
+		log.Errorf("invalid event: %v", err)
+		return
+	}
+	log.Debugf("Valid Event: %+v", event)
+
+	//lookup operation
+	oper, ok := s.consumer.Oper(event.Type)
+	if !ok {
+		log.Errorf("unknown event type(%s)", event.Type)
+		return
+	}
+
+	//parse the event.Request to create a populated oper struct
+	newOper, err := util.StructFromValue(oper, event.Data)
+	if err != nil {
+		log.Errorf("cannot parse %s event data into %T: %v", event.Type, oper, err)
+		return
+	}
+	oper = newOper.(consumer.IHandler)
+	if validator, ok := oper.(IValidator); ok {
+		if err := validator.Validate(); err != nil {
+			log.Errorf("invalid %s event data: %v", event.Type, err)
+			return
+		}
+	}
+
+	//process the parsed request
+	if err := oper.Exec(nil); err != nil {
+		log.Errorf("oper(%s) failed: %v", event.Type, err)
+		return
+	}
+	log.Debugf("oper(%s) success", event.Type)
+}
+
+type IValidator interface {
+	Validate() error
 }
