@@ -16,7 +16,11 @@ import (
 var log = logger.New("nats-stream")
 
 func init() {
-	consumer.RegisterStream("nats", &config{})
+	consumer.RegisterStream("nats", &config{
+		URI:       "nats://nats.4222",
+		Topic:     "", //must be configured
+		NrWorkers: 1,
+	})
 }
 
 type config struct {
@@ -125,7 +129,7 @@ func (s *stream) Run() error {
 } //stream.Run()
 
 func (s stream) handle(msg *nats.Msg) {
-	log.Debugf("Got task request on: %s", msg.Subject)
+	log.Debugf("Got event on: %s", msg.Subject)
 
 	if msg.Reply != "" {
 		//consumer from NATS should not be expected to send a reply
