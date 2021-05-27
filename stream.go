@@ -1,9 +1,19 @@
 package consumer
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type IStream interface {
-	Run() error
+	//NextEvent return success with an event as: data=[]byte, partitionKey="" or "..." and err=nil
+	//if maxDur > 0 and no event by that time, return nil,"",err=nil
+	//if closed or cannot get event, return nil,"",err!=nil
+	NextEvent(maxDir time.Duration) (eventData []byte, partitionKey string, err error)
+
+	//after close was called, NextEvent may only return buffered events and then should
+	//return err!=nil
+	Close()
 }
 
 type IStreamConstructor interface {

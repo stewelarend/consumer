@@ -1,10 +1,11 @@
 package consumer
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 
-	"github.com/stewelarend/config"
+	"github.com/stewelarend/util"
 )
 
 func New(name string) IConsumer {
@@ -19,7 +20,8 @@ type IConsumer interface {
 	AddFunc(name string, handler HandlerFunc)
 	Oper(name string) (IHandler, bool)
 	Opers() []string
-	Run() error
+	//Run() error
+	Exec(ctx IContext, name string, req interface{}) error
 }
 
 type HandlerFunc func(IContext, interface{}) error
@@ -57,23 +59,24 @@ func (consumer consumer) Opers() []string {
 	return names
 }
 
-func (consumer consumer) Run() error {
-	//determine configured consumer.stream and run it
-	streamConfigs := map[string]interface{}{}
-	for n, c := range constructors {
-		streamConfigs[n] = c
+func (consumer consumer) Exec(ctx IContext, name string, req interface{}) error {
+	handler, ok := consumer.handlers[name]
+	if !ok {
+		return fmt.Errorf("unknown event(%s)", name)
 	}
-	streamName, streamConfig, err := config.GetNamedStruct("consumer.stream", streamConfigs)
+
+	//parse req into handler's request struct
+	jsonReq, _ := json.Marshal(req)
+	newHandler, err := util.StructFromJSON(handler, jsonReq)
 	if err != nil {
-		return fmt.Errorf("cannot get configured rpc.stream: %v", err)
+		return fmt.Errorf("invalid(%s): %v", name, err)
 	}
-	streamConstructor := streamConfig.(IStreamConstructor)
-	stream, err := streamConstructor.Create(consumer)
-	if err != nil {
-		return fmt.Errorf("failed to create stream(%s): %v", streamName, err)
+	handler = newHandler.(IHandler)
+	if err := handler.Exec(ctx); err != nil {
+		return fmt.Errorf("%s failed: %v", name, err)
 	}
-	return stream.Run()
-}
+	return nil
+} //consumer.Exec()
 
 //handlerStruct is a wrapper around user functions when the user did not implement a request structure
 type handlerStruct struct {

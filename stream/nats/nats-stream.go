@@ -1,19 +1,15 @@
 package nats
 
 import (
-	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	nats "github.com/nats-io/nats.go"
 	"github.com/stewelarend/consumer"
-	"github.com/stewelarend/consumer/message"
 	"github.com/stewelarend/logger"
-	"github.com/stewelarend/util"
 )
 
-var log = logger.New("nats-stream")
+var log = logger.New()
 
 func init() {
 	consumer.RegisterStream("nats", &config{
@@ -46,19 +42,11 @@ func (c *config) Validate() error {
 }
 
 func (c config) Create(consumer consumer.IConsumer) (consumer.IStream, error) {
-	return &stream{
+	s := &stream{
 		config:   c,
 		consumer: consumer,
-	}, nil
-}
+	}
 
-type stream struct {
-	config   config
-	consumer consumer.IConsumer
-	nc       *nats.Conn
-}
-
-func (s *stream) Run() error {
 	var err error
 	for i := 0; i < 5; i++ {
 		s.nc, err = nats.Connect(s.config.URI)
@@ -69,129 +57,71 @@ func (s *stream) Run() error {
 		time.Sleep(1 * time.Second)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to connect to NATS(%s): %v", s.config.URI, err)
+		return nil, fmt.Errorf("failed to connect to NATS(%s): %v", s.config.URI, err)
 	}
 	log.Debugf("Connected to NATS(%s)", s.nc.ConnectedUrl())
-	defer func() {
-		s.nc.Close()
-		s.nc = nil
-	}()
 
-	//create the message channel and start the workers
-	msgChan := make(chan *nats.Msg, s.config.NrWorkers)
-	wg := sync.WaitGroup{}
-	go func() {
-		for {
-			log.Debugf("loop")
-			select {
-			case msg := <-msgChan:
-				log.Debugf("Got message(sub:%s,reply:%s,hdr:%+v),data(%s)", msg.Subject, msg.Reply, msg.Header, string(msg.Data))
-				wg.Add(1)
-				go func(msg *nats.Msg) {
-					s.handle(msg)
-					wg.Done()
-				}(msg)
-			case <-time.After(time.Second):
-				log.Debugf("no messages yet...")
-			}
-		} //for main loop
-	}()
-
-	defer func() {
-		close(msgChan)
-		log.Debugf("Closed chan")
-		wg.Wait()
-		log.Debugf("Workers stopped")
-	}()
+	//create chan with slots for reading ahead
+	//the nr of slots should not be more than nr of workers
+	//nats will push into this chan
+	s.msgChan = make(chan *nats.Msg, s.config.NrWorkers)
 
 	//subscribe to write into the message channel
-	subscription, err := s.nc.QueueSubscribeSyncWithChan(
+	s.subscription, err = s.nc.QueueSubscribeSyncWithChan(
 		s.config.Topic,
 		s.config.Topic, //Group,
-		msgChan)
+		s.msgChan)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe: %v", err)
+		s.nc.Close()
+		return nil, fmt.Errorf("failed to subscribe: %v", err)
 	}
-
 	log.Debugf("Subscribed to '%s' for processing requests...", s.config.Topic)
 
-	//wait for interrupt then unsubscribe and wait for all workers to terminate
-	//todo...
-	stop := make(chan bool)
-	<-stop
-	log.Debugf("stopping")
+	return s, nil
+}
 
-	if err := subscription.Unsubscribe(); err != nil {
-		return fmt.Errorf("failed to unsubscribe: %v", err)
+type stream struct {
+	config       config
+	consumer     consumer.IConsumer
+	nc           *nats.Conn
+	msgChan      chan *nats.Msg
+	subscription *nats.Subscription
+}
+
+func (s *stream) Close() {
+	if s.nc != nil {
+		if s.subscription != nil {
+			s.subscription.Unsubscribe()
+			s.subscription = nil
+		}
+		s.nc.Close()
+		s.nc = nil
+		close(s.msgChan)
 	}
-	log.Debugf("Unsubscribed")
-	return nil
-} //stream.Run()
+}
 
-func (s stream) handle(msg *nats.Msg) {
-	log.Debugf("Got event on: %s", msg.Subject)
+func (s *stream) NextEvent(maxDur time.Duration) (event []byte, partition string, err error) {
+	select {
+	case msg := <-s.msgChan:
+		if msg.Reply == "" {
+			log.Debugf("Got message(sub:%s,hdr:%+v),data(%s)", msg.Subject, msg.Reply, msg.Header, string(msg.Data))
+			return msg.Data, "", nil
+		}
 
-	if msg.Reply != "" {
 		//consumer from NATS should not be expected to send a reply
 		//only RPC sends replies, so it is an error when reply is requested in the event
 		//which indicates the process sending this event sent a request instead of an event
 		//we respond with an error for such events
-		log.Errorf("Sender requested a reply in NATS which is wrong for consumer topics.")
-		response := message.Response{
-			Message: message.Message{
-				Timestamp: time.Now(),
-			},
-			Result: []message.Result{},
-			Data:   nil,
+		if err := s.nc.Publish(msg.Reply, []byte("reply not supported on this topic")); err != nil {
+			log.Errorf("failed to send error reply: %v", err)
 		}
-		jsonResponse, _ := json.Marshal(response)
-		if err := s.nc.Publish(msg.Reply, jsonResponse); err != nil {
-			log.Errorf("failed to send error response to reply: %v", err)
-		}
-		return
-	}
+		//return no error because the sender was responsible for the error, not us
+		//this will skip over and NextEvent will be called again
+		log.Debugf("Skipped message(sub:%s,reply:%s,hdr:%+v),data(%s)", msg.Subject, msg.Reply, msg.Header, string(msg.Data))
+		return nil, "", nil
 
-	//todo: on error, push event to error queue...
-	var event message.Event
-	if err := json.Unmarshal(msg.Data, &event); err != nil {
-		log.Errorf("failed to decode JSON event: %v", err)
-		return
+	case <-time.After(time.Second):
+		log.Debugf("no messages yet...")
+		return nil, "", nil
 	}
-	if err := event.Validate(); err != nil {
-		log.Errorf("invalid event: %v", err)
-		return
-	}
-	log.Debugf("Valid Event: %+v", event)
-
-	//lookup operation
-	oper, ok := s.consumer.Oper(event.Type)
-	if !ok {
-		log.Errorf("unknown event type(%s)", event.Type)
-		return
-	}
-
-	//parse the event.Request to create a populated oper struct
-	newOper, err := util.StructFromValue(oper, event.Data)
-	if err != nil {
-		log.Errorf("cannot parse %s event data into %T: %v", event.Type, oper, err)
-		return
-	}
-	oper = newOper.(consumer.IHandler)
-	if validator, ok := oper.(IValidator); ok {
-		if err := validator.Validate(); err != nil {
-			log.Errorf("invalid %s event data: %v", event.Type, err)
-			return
-		}
-	}
-
-	//process the parsed request
-	if err := oper.Exec(nil); err != nil {
-		log.Errorf("oper(%s) failed: %v", event.Type, err)
-		return
-	}
-	log.Debugf("oper(%s) success", event.Type)
-}
-
-type IValidator interface {
-	Validate() error
 }

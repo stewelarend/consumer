@@ -10,10 +10,14 @@ github.com/stewelarend/config v0.0.0-20210505180553-bc058bfe0bb8 h1:k2hlq7j3vRSU
 github.com/stewelarend/config v0.0.0-20210505180553-bc058bfe0bb8/go.mod h1:xE3u9bVcaJ5edFGIlw4d//hYIVNm23do7y/67+yrYNI=
 github.com/stewelarend/config v0.0.2 h1:yXCew1XXkpJg6hiH8q6Uicw1BiT75M3lRwJhDVR286Q=
 github.com/stewelarend/config v0.0.2/go.mod h1:vZwHXamy+CCI2JHQzMT9QuO5xoK5HFjOAA6hA6CLeYU=
+github.com/stewelarend/config v0.0.3-0.20210527195703-8026709a1547 h1:bEbogIdWVQYGYrDFRBswkj2c3QI2t5FM7hlwHklzbmU=
+github.com/stewelarend/config v0.0.3-0.20210527195703-8026709a1547/go.mod h1:CQgqzy9m3YaCI1jnC1Xj1JIEkaQa4cSWOSfvZddO7UA=
 github.com/stewelarend/logger v0.0.0-20210505181125-8425be1c01a2 h1:oK10uPdyosEHdCFIzaK7hl69qGVKh10wNEh0xcYbe/A=
 github.com/stewelarend/logger v0.0.0-20210505181125-8425be1c01a2/go.mod h1:9N9cjtsb9vHO+Noy17MDNMmH4fL1jBpGJ2HIxQyljvo=
 github.com/stewelarend/logger v0.0.1 h1:1SG1ZTz2VlPevGzJN5nEmegeBD2q/JzwejVR+ID9cSs=
 github.com/stewelarend/logger v0.0.1/go.mod h1:9N9cjtsb9vHO+Noy17MDNMmH4fL1jBpGJ2HIxQyljvo=
+github.com/stewelarend/logger v0.0.2-0.20210527194720-308ba4de2f2f h1:ucKdYHrEl1nuDi/0XzyLtnwOPcuG5ssA+28THSfkx2g=
+github.com/stewelarend/logger v0.0.2-0.20210527194720-308ba4de2f2f/go.mod h1:9N9cjtsb9vHO+Noy17MDNMmH4fL1jBpGJ2HIxQyljvo=
 github.com/stewelarend/util v0.0.1 h1:1ivCTixeY76nMaua/2RimslifxldpcT0o7XKMSZFl3Y=
 github.com/stewelarend/util v0.0.1/go.mod h1:OXfy3m1gNx2RmTNj7+AEciHq9awOJ307vyrjezCsR6Q=
 golang.org/x/crypto v0.0.0-20210314154223-e6e6c4f2bb5b h1:wSOdpTq0/eI46Ez/LkDwIsAKA71YP2SRKBODiRWM0as=
