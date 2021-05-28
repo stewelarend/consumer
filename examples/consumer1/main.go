@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/stewelarend/consumer"
-	"github.com/stewelarend/consumer/controller"
+	"github.com/stewelarend/controller"
 	"github.com/stewelarend/logger"
 )
 
@@ -106,7 +106,7 @@ type TaskReq struct {
 	Value int
 }
 
-func (r TaskReq) Exec(ctx consumer.IContext) error {
+func (r TaskReq) Exec(ctx controller.Context) error {
 	log.Debugf("task %+v", r)
 	eventChan <- r.Value
 	return nil
@@ -151,7 +151,7 @@ type Message struct {
 
 //Handle is called in a background worker
 //it may panic on error or return error value...
-func (h handler) Handle(ctx consumer.IContext, eventData []byte) error {
+func (h handler) Handle(ctx controller.Context, eventData []byte) error {
 	//parse event data from stream, a JSON message, into our own message struct
 	msg := Message{}
 	if err := json.Unmarshal(eventData, &msg); err != nil {

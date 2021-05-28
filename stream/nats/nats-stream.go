@@ -41,10 +41,9 @@ func (c *config) Validate() error {
 	return nil
 }
 
-func (c config) Create(consumer consumer.IConsumer) (consumer.IStream, error) {
+func (c config) Create() (consumer.IStream, error) {
 	s := &stream{
-		config:   c,
-		consumer: consumer,
+		config: c,
 	}
 
 	var err error
@@ -82,7 +81,6 @@ func (c config) Create(consumer consumer.IConsumer) (consumer.IStream, error) {
 
 type stream struct {
 	config       config
-	consumer     consumer.IConsumer
 	nc           *nats.Conn
 	msgChan      chan *nats.Msg
 	subscription *nats.Subscription

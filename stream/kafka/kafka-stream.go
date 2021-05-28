@@ -55,10 +55,9 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (c Config) Create(consumer consumer.IConsumer) (consumer.IStream, error) {
+func (c Config) Create() (consumer.IStream, error) {
 	s := kafkaStream{
 		config:   c,
-		consumer: consumer,
 	}
 	kafkaConfig := kafka.ConfigMap{
 		"bootstrap.servers": strings.Join(c.Servers, ","),
@@ -77,9 +76,8 @@ func (c Config) Create(consumer consumer.IConsumer) (consumer.IStream, error) {
 }
 
 type kafkaStream struct {
-	config   Config
-	consumer consumer.IConsumer
-	kafka    *kafka.Consumer
+	config Config
+	kafka  *kafka.Consumer
 }
 
 func (s kafkaStream) Close() {

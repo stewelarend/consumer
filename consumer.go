@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/stewelarend/controller"
 	"github.com/stewelarend/util"
 )
 
@@ -20,14 +21,13 @@ type IConsumer interface {
 	AddFunc(name string, handler HandlerFunc)
 	Oper(name string) (IHandler, bool)
 	Opers() []string
-	//Run() error
-	Exec(ctx IContext, name string, req interface{}) error
+	Exec(ctx controller.Context, name string, req interface{}) error
 }
 
-type HandlerFunc func(IContext, interface{}) error
+type HandlerFunc func(controller.Context, interface{}) error
 
 type IHandler interface {
-	Exec(ctx IContext) error
+	Exec(ctx controller.Context) error
 }
 
 type consumer struct {
@@ -59,7 +59,7 @@ func (consumer consumer) Opers() []string {
 	return names
 }
 
-func (consumer consumer) Exec(ctx IContext, name string, req interface{}) error {
+func (consumer consumer) Exec(ctx controller.Context, name string, req interface{}) error {
 	handler, ok := consumer.handlers[name]
 	if !ok {
 		return fmt.Errorf("unknown event(%s)", name)
@@ -83,7 +83,7 @@ type handlerStruct struct {
 	fnc HandlerFunc
 }
 
-func (h handlerStruct) Exec(ctx IContext) error {
+func (h handlerStruct) Exec(ctx controller.Context) error {
 	fmt.Printf("call h(%+v).fnc=%+v\n", h, h.fnc)
 	return h.fnc(ctx, h)
 }
